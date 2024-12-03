@@ -6,24 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-
-interface Simulation {
-  productName: string
-  price: number
-  store: string
-  category: string
-  totalValue: number
-  installments: number
-  interestRate: number
-  results: SimulationResult[]
-}
-
-interface SimulationResult {
-  installment: number
-  originalValue: number
-  discountedValue: number
-  discount: number
-}
+import useStore, { formatCurrency } from '../store/useStore'
 
 type Category =
   | "electronics"
@@ -61,68 +44,60 @@ const categories: { value: Category; label: string }[] = [
   { value: "investments", label: "Investments" },
 ];
 
-
 export function DiscountCalculator() {
+  const { addSimulation, updateSimulation, calculateDiscount } = useStore()
+  const [id, setId] = useState<string | null>(null)
   const [productName, setProductName] = useState('')
   const [price, setPrice] = useState(0)
   const [store, setStore] = useState('')
   const [category, setCategory] = useState('')
-  const [totalValue, setTotalValue] = useState(0)
   const [installments, setInstallments] = useState(1)
   const [interestRate, setInterestRate] = useState(10.58)
-  const [results, setResults] = useState<SimulationResult[]>([])
+  const [results, setResults] = useState<ReturnType<typeof calculateDiscount>>([])
 
   useEffect(() => {
-    setTotalValue(price)
-  }, [price])
+    setResults(calculateDiscount(price, installments, interestRate))
+  }, [price, installments, calculateDiscount])
 
-  useEffect(() => {
-    calculateDiscount()
-  }, [totalValue, installments, interestRate])
-
-  const calculateDiscount = () => {
-    const newResults: SimulationResult[] = []
-    for (let i = 1; i <= installments; i++) {
-      const originalValue = totalValue / installments
-      const discountFactor = Math.pow(1 + interestRate / 100 / 12, -i)
-      const discountedValue = originalValue * discountFactor
-      const discount = originalValue - discountedValue
-      newResults.push({
-        installment: i,
-        originalValue,
-        discountedValue,
-        discount
-      })
-    }
-    setResults(newResults)
-  }
-
-  const saveSimulation = () => {
-    const simulation: Simulation = {
+  const handleSubmit = () => {
+    const simulation = {
       productName,
       price,
       store,
       category,
-      totalValue,
-      installments,
       interestRate,
-      results
+      installments,
     }
-    const savedSimulations = JSON.parse(localStorage.getItem('simulations') || '[]')
-    savedSimulations.push(simulation)
-    localStorage.setItem('simulations', JSON.stringify(savedSimulations))
+
+    if (id) {
+      updateSimulation({ ...simulation, id, results })
+    } else {
+      addSimulation(simulation)
+    }
+
+    resetForm()
+  }
+
+  const resetForm = () => {
+    setId(null)
+    setProductName('')
+    setPrice(0)
+    setStore('')
+    setCategory('')
+    setInstallments(1)
   }
 
   const totalOriginalValue = results.reduce((sum, result) => sum + result.originalValue, 0)
   const totalDiscountedValue = results.reduce((sum, result) => sum + result.discountedValue, 0)
   const totalDiscount = results.reduce((sum, result) => sum + result.discount, 0)
 
+
   return (
     <div className="bg-white p-6 rounded-lg shadow-md">
       <h2 className="text-xl font-semibold mb-4">Discount Calculator</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <div>
-          <Label htmlFor="productName">Product Name</Label>
+          <Label htmlFor="productName">1. Product Name</Label>
           <Input
             id="productName"
             value={productName}
@@ -130,16 +105,7 @@ export function DiscountCalculator() {
           />
         </div>
         <div>
-          <Label htmlFor="price">Price</Label>
-          <Input
-            id="price"
-            type="number"
-            value={price}
-            onChange={(e) => setPrice(parseFloat(e.target.value))}
-          />
-        </div>
-        <div>
-          <Label htmlFor="store">Store</Label>
+          <Label htmlFor="store">2. Store</Label>
           <Input
             id="store"
             value={store}
@@ -147,7 +113,7 @@ export function DiscountCalculator() {
           />
         </div>
         <div>
-          <Label htmlFor="category">Category</Label>
+          <Label htmlFor="category">3. Category</Label>
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger id="category">
               <SelectValue placeholder="Select a category" />
@@ -162,7 +128,16 @@ export function DiscountCalculator() {
           </Select>
         </div>
         <div>
-          <Label htmlFor="installments">Installments</Label>
+          <Label htmlFor="price">4. Price</Label>
+          <Input
+            id="price"
+            type="number"
+            value={price}
+            onChange={(e) => setPrice(parseFloat(e.target.value))}
+          />
+        </div>
+        <div>
+          <Label htmlFor="installments">5. Installments</Label>
           <Input
             id="installments"
             type="number"
@@ -171,7 +146,7 @@ export function DiscountCalculator() {
           />
         </div>
         <div>
-          <Label htmlFor="interestRate">Anual Interest Rate (%)</Label>
+          <Label htmlFor="interestRate">6. Anual Interest Rate (%)</Label>
           <Input
             disabled
             id="interestRate"
@@ -182,7 +157,9 @@ export function DiscountCalculator() {
           />
         </div>
       </div>
-      <Button onClick={saveSimulation}>Save Simulation</Button>
+      <Button onClick={handleSubmit}>
+        {id ? 'Update Simulation' : 'Save Simulation'}
+      </Button>
       <Table className="mt-4">
         <TableHeader>
           <TableRow>
@@ -196,20 +173,19 @@ export function DiscountCalculator() {
           {results.map((result) => (
             <TableRow key={result.installment}>
               <TableCell>{result.installment}</TableCell>
-              <TableCell>{result.originalValue.toFixed(2)}</TableCell>
-              <TableCell>{result.discountedValue.toFixed(2)}</TableCell>
-              <TableCell>{result.discount.toFixed(2)}</TableCell>
+              <TableCell>{formatCurrency(result.originalValue)}</TableCell>
+              <TableCell>{formatCurrency(result.discountedValue)}</TableCell>
+              <TableCell>{formatCurrency(result.discount)}</TableCell>
             </TableRow>
           ))}
           <TableRow className="font-bold">
             <TableCell>Total</TableCell>
-            <TableCell>{totalOriginalValue.toFixed(2)}</TableCell>
-            <TableCell>{totalDiscountedValue.toFixed(2)}</TableCell>
-            <TableCell>{totalDiscount.toFixed(2)}</TableCell>
+            <TableCell>{formatCurrency(totalOriginalValue)}</TableCell>
+            <TableCell>{formatCurrency(totalDiscountedValue)}</TableCell>
+            <TableCell>{formatCurrency(totalDiscount)}</TableCell>
           </TableRow>
         </TableBody>
       </Table>
     </div>
   )
 }
-
